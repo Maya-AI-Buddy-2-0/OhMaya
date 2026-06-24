@@ -1,6 +1,9 @@
 import os
+import time
 import requests
 import psycopg2
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -11,12 +14,24 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SUPABASE_DB_CONNECTION = os.getenv("SUPABASE_DB_CONNECTION")
 
-# Hugging Face Space URL
-HF_USERNAME = "byshiladityamallick"
-SPACE_NAME = "OhMaya"
-WEBHOOK_URL = f"https://{HF_USERNAME}-{SPACE_NAME.lower()}.hf.space"
+# Cloud providers assign a dynamic port. If none, default to 7860.
+PORT = int(os.getenv("PORT", 7860))
+
+# --- CLOUD HEALTH CHECK SERVER ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Maya AI Engine is Awake & Listening to Telegram.")
+
+def keep_alive_server():
+    server = HTTPServer(('0.0.0.0', PORT), HealthCheckHandler)
+    server.serve_forever()
+# ----------------------------------------
 
 def ask_hermes(system_prompt, user_input):
+    """Sends dynamic system parameters and user prompts to the free OpenRouter Hermes 3 instance."""
     try:
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
@@ -38,26 +53,33 @@ def ask_hermes(system_prompt, user_input):
         return f"🚨 Engine Processing Error: {str(e)}"
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Dynamically generates a unique AI greeting before showing the command menu."""
     await update.message.reply_chat_action(action="typing")
+
     system_prompt = (
         "You are Maya 2.0, an elite, autonomous AI orchestrator. "
         "The system has just booted up. Write a short, punchy, 2-sentence greeting "
         "welcoming your creator back to the terminal. Hook him in. Make it sound highly capable, "
         "and ready to build the next empire. Do not use hashtags or emojis."
     )
+    
     ai_greeting = ask_hermes(system_prompt, "System boot sequence complete. Greet the boss.")
+
     menu = (
         "\n\n⚡ **SYSTEM COMMANDS** ⚡\n"
         "🔹 `/analyze [URL]` - Scrape site & spawn isolated business/marketing agents.\n"
         "🔹 `/link [domain] [KEY=VALUE]` - Securely inject API keys.\n"
         "💬 Or just type a message to chat with my master node."
     )
+
     await update.message.reply_text(f"{ai_greeting}{menu}", parse_mode="Markdown")
 
 async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Dynamically parses websites, invokes sub-agents, and creates database isolation partitions."""
     if not context.args:
         await update.message.reply_text("⚠️ Execution Halt. Please pass a target URL. Example: /analyze https://thegreydiary.online/")
         return
+        
     url = context.args[0]
     domain = url.replace("https://", "").replace("http://", "").split("/")[0]
     await update.message.reply_text(f"📡 Maya is deploying web crawlers to scan: `{domain}`...", parse_mode="Markdown")
@@ -67,6 +89,7 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         soup = BeautifulSoup(res.text, 'html.parser')
         extracted_chunks = [s.get_text() for s in soup.find_all(['p', 'h1', 'h2', 'h3', 'li'])]
         raw_text = " ".join(extracted_chunks)[:4000]
+        
         if not raw_text.strip():
             raw_text = "Fallback: Landing page loaded, but content extraction yielded minimal string output."
     except Exception as e:
@@ -108,9 +131,11 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Dynamically binds environment credentials to specific domain structures on the fly."""
     if len(context.args) < 2 or "=" not in context.args[1]:
         await update.message.reply_text("⚠️ Syntax error. Correct format: `/link [domain_name] [KEY_NAME=VALUE]`", parse_mode="Markdown")
         return
+        
     domain = context.args[0]
     kv_string = context.args[1]
     key, val = kv_string.split("=", 1)
@@ -131,6 +156,7 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Vault Write Failure: {str(e)}")
 
 async def master_chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Master default routing handling casual prompts using our core identity."""
     user_input = update.message.text
     system_identity = (
         "You are Maya 2.0, a hyper-intelligent autonomous orchestrator backbone. "
@@ -141,27 +167,20 @@ async def master_chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(response)
 
 def main():
-    print(f"Maya AI Engine starting Webhook on port 7860...")
-    print(f"Webhook URL configured as: {WEBHOOK_URL}")
+    # 1. Fire up the invisible port router in a background thread to keep the cloud happy
+    threading.Thread(target=keep_alive_server, daemon=True).start()
 
-    # The Shield: Forces Hugging Face to wait patiently while Telegram connects
+    # 2. Build the Telegram App with the timeout shield enabled
     t_request = HTTPXRequest(connection_pool_size=8, connect_timeout=100.0, read_timeout=100.0, write_timeout=100.0, http_version="1.1")
-    
-    # Build the Application with the timeout shield enabled
     app = Application.builder().token(TELEGRAM_TOKEN).request(t_request).build()
     
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("analyze", analyze_command))
     app.add_handler(CommandHandler("link", link_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, master_chat_handler))
-
-    # Start the Webhook
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=7860,
-        url_path=TELEGRAM_TOKEN,
-        webhook_url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
-    )
+    
+    print("Maya AI Engine fully deployed. Connecting to Telegram...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
