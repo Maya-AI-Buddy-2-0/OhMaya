@@ -48,7 +48,13 @@ def ask_hermes(system_prompt, user_input):
             },
             timeout=30
         )
-        return response.json()['choices'][0]['message']['content']
+        data = response.json()
+        
+        # DIAGNOSTIC PATCH: Check if OpenRouter sent an error instead of a response
+        if 'error' in data:
+            return f"🚨 OpenRouter API Error: {data['error'].get('message', 'Unknown Error')}"
+            
+        return data['choices'][0]['message']['content']
     except Exception as e:
         return f"🚨 Engine Processing Error: {str(e)}"
 
@@ -167,7 +173,7 @@ async def master_chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(response)
 
 def main():
-    # 1. Fire up the invisible port router in a background thread to keep the cloud happy
+    # 1. Fire up the invisible port router in a background thread to keep Render happy
     threading.Thread(target=keep_alive_server, daemon=True).start()
 
     # 2. Build the Telegram App with the timeout shield enabled
