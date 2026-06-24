@@ -4,14 +4,14 @@ import psycopg2
 from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.request import HTTPXRequest
 
 # Capture Cloud Server Environment Variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SUPABASE_DB_CONNECTION = os.getenv("SUPABASE_DB_CONNECTION")
 
-# Hugging Face Space URL (We will construct this dynamically)
-# Replace 'byshiladityamallick' with your exact HF username if different.
+# Hugging Face Space URL
 HF_USERNAME = "byshiladityamallick"
 SPACE_NAME = "OhMaya"
 WEBHOOK_URL = f"https://{HF_USERNAME}-{SPACE_NAME.lower()}.hf.space"
@@ -141,17 +141,21 @@ async def master_chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(response)
 
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    print(f"Maya AI Engine starting Webhook on port 7860...")
+    print(f"Webhook URL configured as: {WEBHOOK_URL}")
+
+    # The Shield: Forces Hugging Face to wait patiently while Telegram connects
+    t_request = HTTPXRequest(connection_pool_size=8, connect_timeout=100.0, read_timeout=100.0, write_timeout=100.0, http_version="1.1")
+    
+    # Build the Application with the timeout shield enabled
+    app = Application.builder().token(TELEGRAM_TOKEN).request(t_request).build()
     
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("analyze", analyze_command))
     app.add_handler(CommandHandler("link", link_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, master_chat_handler))
-    
-    print(f"Maya AI Engine starting Webhook on port 7860...")
-    print(f"Webhook URL configured as: {WEBHOOK_URL}")
 
-    # Start the application using a webhook instead of polling
+    # Start the Webhook
     app.run_webhook(
         listen="0.0.0.0",
         port=7860,
