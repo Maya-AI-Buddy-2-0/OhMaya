@@ -1,6 +1,8 @@
 import os
 import requests
 import psycopg2
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from bs4 import BeautifulSoup
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -9,6 +11,20 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SUPABASE_DB_CONNECTION = os.getenv("SUPABASE_DB_CONNECTION")
+
+# --- HUGGING FACE HEALTH CHECK SERVER ---
+# This invisible web server sits on Port 7860 to keep Hugging Face's network router happy.
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Maya AI Engine is Awake & Listening to Telegram.")
+
+def keep_alive_server():
+    server = HTTPServer(('0.0.0.0', 7860), HealthCheckHandler)
+    server.serve_forever()
+# ----------------------------------------
 
 def ask_hermes(system_prompt, user_input):
     """Sends dynamic system parameters and user prompts to the free OpenRouter Hermes 3 instance."""
@@ -33,7 +49,6 @@ def ask_hermes(system_prompt, user_input):
         return f"🚨 Engine Processing Error: {str(e)}"
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Greets you and provides baseline operational documentation."""
     await update.message.reply_text(
         "🧠 *Maya AI Buddy 2.0 Engine Live*\n\n"
         "Send commands to automatically assemble business nodes:\n\n"
@@ -44,7 +59,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Dynamically parses websites, invokes sub-agents, and creates database isolation partitions."""
     if not context.args:
         await update.message.reply_text("⚠️ Execution Halt. Please pass a target URL. Example: /analyze https://thegreydiary.online/")
         return
@@ -100,7 +114,6 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Dynamically binds environment credentials to specific domain structures on the fly."""
     if len(context.args) < 2 or "=" not in context.args[1]:
         await update.message.reply_text("⚠️ Syntax error. Correct format: `/link [domain_name] [KEY_NAME=VALUE]`", parse_mode="Markdown")
         return
@@ -125,7 +138,6 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Vault Write Failure: {str(e)}")
 
 async def master_chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Master default routing handling casual prompts using our core identity."""
     user_input = update.message.text
     system_identity = (
         "You are Maya 2.0, Shiladitya's hyper-intelligent autonomous orchestrator backbone. "
@@ -136,7 +148,12 @@ async def master_chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(response)
 
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    # 1. Fire up the Hugging Face invisible port router in a background thread
+    threading.Thread(target=keep_alive_server, daemon=True).start()
+
+    # 2. Build the Telegram App with longer network timeout buffers
+    app = Application.builder().token(TELEGRAM_TOKEN).read_timeout(30).write_timeout(30).connect_timeout(30).build()
+    
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("analyze", analyze_command))
     app.add_handler(CommandHandler("link", link_command))
