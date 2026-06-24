@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import psycopg2
 import threading
@@ -166,10 +167,10 @@ def main():
     # Fire up the Hugging Face invisible port router in a background thread
     threading.Thread(target=keep_alive_server, daemon=True).start()
 
-    # Create a custom HTTPX request object with massive timeouts to survive slow cloud routing
-    t_request = HTTPXRequest(connection_pool_size=8, connect_timeout=100.0, read_timeout=100.0, write_timeout=100.0)
+    # Create a custom HTTPX request object, forcing HTTP/1.1 for Docker stability
+    t_request = HTTPXRequest(connection_pool_size=8, connect_timeout=100.0, read_timeout=100.0, write_timeout=100.0, http_version="1.1")
 
-    # Build the Telegram App with the custom timeout wrapper
+    # Build the Telegram App
     app = Application.builder().token(TELEGRAM_TOKEN).request(t_request).build()
     
     app.add_handler(CommandHandler("start", start_command))
@@ -177,7 +178,12 @@ def main():
     app.add_handler(CommandHandler("link", link_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, master_chat_handler))
     
-    print("Maya AI Engine fully deployed. Polling cloud instances...")
+    print("Maya AI Engine fully deployed. Giving the cloud network 5 seconds to warm up...")
+    
+    # --- THE FIX: Pause for 5 seconds so Hugging Face can assign the IP address ---
+    time.sleep(5)
+    print("Connecting to Telegram...")
+    
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
